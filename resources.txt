@@ -1,0 +1,5 @@
+http://www.tutorialrepublic.com/twitter-bootstrap-tutorial/bootstrap-lists.php
+http://stackoverflow.com/questions/18638507/how-to-clear-contents-of-an-observablearray-that-was-populated-from-previous-vis
+https://developers.google.com/maps/documentation/javascript/examples/infowindow-simple
+http://stackoverflow.com/questions/1739800/variables-set-during-getjson-function-only-accessible-within-function
+http://stackoverflow.com/questions/5858898/google-map-infowindow-set-height-and-width
