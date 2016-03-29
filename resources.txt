@@ -3,3 +3,15 @@ http://stackoverflow.com/questions/18638507/how-to-clear-contents-of-an-observab
 https://developers.google.com/maps/documentation/javascript/examples/infowindow-simple
 http://stackoverflow.com/questions/1739800/variables-set-during-getjson-function-only-accessible-within-function
 http://stackoverflow.com/questions/5858898/google-map-infowindow-set-height-and-width
+
+scrollable toggle menu code example source:
+http://www.bootply.com/86116
+
+keyboard shortcut:
+http://krasimirtsonev.com/blog/article/javascript-handling-keyboard-shortcuts-with-jquery-key-catch
+http://www.hongkiat.com/blog/keyboard-shortcuts-website/
+
+real-time input value update:
+http://stackoverflow.com/questions/31386865/call-function-on-input-change-with-knockout-js-valueupdate
+
+http://www.knockmeout.net/2011/04/utility-functions-in-knockoutjs.html

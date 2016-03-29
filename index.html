@@ -3,7 +3,7 @@
   <head>
     <title>Neighbourhood Map</title>
     <meta charset="utf-8">
-    <style type="text/css">
+    <style>
       html, body { height: 100%; margin: 0; padding: 0; }
       #map { height: 100%; }
     </style>
@@ -13,6 +13,7 @@
     <script src="js/lib/knockout-3.2.0.js"></script>
     <!-- Latest compiled and minified CSS -->
     <link rel="stylesheet" href="http://maxcdn.bootstrapcdn.com/bootstrap/3.3.5/css/bootstrap.min.css">
+    <link rel="stylesheet" href="css/app.css">
 
     <meta name="viewport" content="width=device-width">
 
@@ -22,15 +23,21 @@
       <div class="row" style="height:5%;">
         <div class="col-md-12">
           <div class="input-group">
-            <input id="searchbox" type="text" class="form-control" data-bind="textInput: searchTerms"" placeholder="Search for...">
+            <input id="searchbox" type="text" class="form-control" data-bind="value: searchTerms, valueUpdate: 'afterkeydown'" placeholder="Search for...">
           </div>
         </div>
       </div>
       <div class="row" style="height:95%;">
         <div class="col-md-4">
-          <ul class="list-group" data-bind="foreach: entityList">
+          <div class="dropdown">
+            <button class="btn btn-default dropdown-toggle" type="button" id="dropdownMenu1" data-toggle="dropdown" aria-haspopup="true" aria-expanded="true">
+            Dropdown
+            <span class="caret"></span>
+            </button>
+          <ul class="dropdown-menu scrollable-menu" aria-labelledby="dropdownMenu1" data-bind="foreach: searchbox">
               <li class="list-group-item" data-bind="text: address, click: $parent.setEntity"></li>
           </ul>
+          </div>
         </div>
         <div class="col-md-8" id="map"></div>
       </div>
