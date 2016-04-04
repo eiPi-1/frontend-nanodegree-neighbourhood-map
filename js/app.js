@@ -210,6 +210,7 @@ var Entity = function(data) {
 	this.tags = ko.observableArray(data.tags);
 	this.city = ko.observable(data.city);
 	this.description = ko.observable(data.description);
+	this.mapMarker = ko.observable(data.mapMarker);
 };
 
 
@@ -228,30 +229,17 @@ var ViewModel = function() {
 	  zoom: 13,
 	  center: myLatlng
 	};
-	
-	// action on key down
-	$(document).keyup(function(e) {
-		var isCtrl = false;
-
-		if(e.which == 17) {
-			isCtrl = true; 
-		}
-
-		if(isCtrl) { 
-			var search = $('#searchbox');
-		    search.val('');
-		    search.focus();
-		}
-	});
 
 	// creating the map in the UI
 	self.map = new google.maps.Map(document.getElementById('map'), mapOptions);
 
 	// mapping each entity from the model with a marker on the map in the UI
-	initialEntities.forEach(function(entity){
-		var koEntity = new Entity(entity);
-		self.entityList.push(koEntity);
-	});
+	//initialEntities.forEach(function(entity){
+	//	var koEntity = new Entity(entity);
+	//	self.entityList.push(koEntity);
+	//});
+
+	//self.currentEntity = ko.observable(self.entityList()[0]);
 
 	self.clearMarkers = function(){
 		// source: https://developers.google.com/maps/documentation/javascript/examples/marker-remove
@@ -260,10 +248,15 @@ var ViewModel = function() {
 		  }
 	};
 
+	self.setEntity = function(entity){
+		self.currentEntity(entity);
+
+		new google.maps.event.trigger(self.currentEntity().mapMarker(), 'click');
+	};
+
 	self.initializeMapEntities = function(entities) {
 		//self.map = new google.maps.Map(document.getElementById('map'), mapOptions);
 		entities.forEach(function(entity){
-			var koEntity = new Entity(entity);
 
 			// constructing the Google Maps marker
 			var marker = new google.maps.Marker({
@@ -278,6 +271,7 @@ var ViewModel = function() {
 			  	// start building the strint to be displayed in the Google maps marker
 				// info window for this entity.
 				var info = '<h4>Relevant places:</h4>';
+				var wikiArticlesInfo = '<h4>Relevant Wiki Articles:</h4>';
 
 				// the url string to be used for the Wiki API
 				var wikiUrl = 'http://en.wikipedia.org/w/api.php?action=opensearch&search=' +
@@ -289,34 +283,97 @@ var ViewModel = function() {
 		        console.log('failed to get wikipedia resources');
 			    }, 8000);
 
+			    // the url string to be used for the Foursquare API
+			   	var fsqrUrl = 'https://api.foursquare.com/v2/venues/search' +
+							  '?client_id=' +
+							  '&client_secret=' +
+							  '&v=20130815' +
+							  '&ll=' + entity.lat + ',' + entity.lan +
+							  '&query=' + entity.title.split(' ').join('+');
+
 		        // getting data from Wiki API
 			    $.ajax({url: wikiUrl,
-			            dataType: 'jsonp',
-			            done: function(response){
-			                console.log(response);
-			              var WikiArticlesTitles = response[1];
-			              var WikiArticlesURLs = response[3];
+		            dataType: 'jsonp',
+		            success: function(response){
+			            var WikiArticlesTitles = response[1];
+			            var WikiArticlesURLs = response[3];
 
-			              for (var i = 0; i < WikiArticlesTitles.length; i++) {
-			                var articleTitle = WikiArticlesTitles[i];
-			                var articleUrl = WikiArticlesURLs[i];
+			            for (var i = 0; i < WikiArticlesTitles.length; i++) {
+				            var articleTitle = WikiArticlesTitles[i];
+				            var articleUrl = WikiArticlesURLs[i];
 
-			                    var li_elem = '<li>' + "<a href='" +
-			                     articleUrl + "">"" + articleTitle +
-			                      '</a>'+ '</li>' ;
-			                    console.log(li_elem);
-			              }
-			              clearTimeout(wikiRequestTimeout);
-			            }
-			        });
+			                var li_elem = '<li>' + "<a href=&quot;" +
+			                articleUrl + "&quot;>" + articleTitle +
+			                '</a>'+ '</li>' ;
 
-				    // the url string to be used for the Foursquare API
-				   	var fsqrUrl = 'https://api.foursquare.com/v2/venues/search' +
-								  '?client_id=' +
-								  '&client_secret=' +
-								  '&v=20130815' +
-								  '&ll=' + entity.lat + ',' + entity.lan +
-								  '&query=' + entity.title.split(' ').join('+');
+		                	wikiArticlesInfo = wikiArticlesInfo + li_elem;
+		            	}
+
+		            	// getting data from Foursquare API
+						$.getJSON(fsqrUrl, function (data) {
+					        venues = data.response.venues;
+
+					        // building the info window string by adding
+					        // relevant venues from  Foursquare
+					        for (var i = 0; i < venues.length; i++) {
+					            var venue = venues[i];
+
+					            if ( venue.name ){
+					                info = info + venue.name;
+
+					            }
+					            // adding the address of the venue to the info window string
+					            if ( venue.location ){
+					            	if (venue.location.formattedAddress){
+					            		info = info + ' - ' + venue.location.formattedAddress[0];
+					            	} else {
+					            		if (venue.locatio.address){
+					            			info = info + ' - ' + venue.location.address;
+					            		}
+					            	}
+					            }
+					            info = info + '<br>';
+					        }
+
+					        info = info + wikiArticlesInfo;
+
+					        var entityName = entity.title;
+
+					        if (entity.title.length === 0){
+					        	entityName = entity.address;
+					        }
+
+						  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+							'<h2>' + entity.title + '</h2>' +
+							entity.description + '<br>' +
+							'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+							'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+							'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+							info + 
+							'</div>';
+
+						  	// constructing the info window object
+							var infowindow = new google.maps.InfoWindow({
+							    content: contentString
+							});
+
+							infowindow.open(self.map, marker);
+					    }).error(function() {
+					      var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+							'<h2>' + entity.title + '</h2>' +
+							entity.description + '<br>' +
+							'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+							'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+							'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+							'Wiki data could not be fetched!' + 
+							'</div>';
+
+					  	});
+
+		              	clearTimeout(wikiRequestTimeout);
+		            }
+		        }).error(function() {
+					console.log('Wiki Articles could not be loaded'); 
 
 					// getting data from Foursquare API
 					$.getJSON(fsqrUrl, function (data) {
@@ -342,34 +399,53 @@ var ViewModel = function() {
 				            	}
 				            }
 				            info = info + '<br>';
-				          }
+				        }
 
-				        // map the selected entities on the Google Maps map in the UI
-				        //self.mapEntity(clickedEntity, info);
-						//self.listEntities([entity]);
+				        info = info + wikiArticlesInfo;
 
+				        var entityName = entity.title;
+
+				        if (entity.title.length === 0){
+				        	entityName = entity.address;
+				        }
+
+					  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+						'<h2>' + entityName+ '</h2>' +
+						entity.description + '<br>' +
+						'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+						'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+						'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+						info + 
+						'</div>';
+
+					  	// constructing the info window object
+						var infowindow = new google.maps.InfoWindow({
+						    content: contentString
+						});
+
+						infowindow.open(self.map, marker);
 				    }).error(function() {
-				      console.log('Forsquare Articles could not be loaded '); 
-
+				      var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+						'<h2>' + entityName+ '</h2>' +
+						entity.description + '<br>' +
+						'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+						'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+						'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+						'Foursquare data could not be fetched!' + 
+						'</div>';
 				  	});
 
-				  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
-					'<h2>' + entity.title + '</h2>' +
-					entity.description + '<br>' +
-					info + 
-					'</div>';
-
-				  	// constructing the info window object
-					var infowindow = new google.maps.InfoWindow({
-					    content: contentString
-					});
-
-					infowindow.open(self.map, marker);
+				});
 
 			});
 
 			//marker.addListener('mouseover', function() {
 			//});
+			entity.mapMarker = marker;
+			var koEntity = new Entity(entity);
+			self.entityList.push(koEntity);
+
+			self.currentEntity = ko.observable(self.entityList()[0]);
 
 			// adding the marker to the map
 			marker.setMap(self.map);
@@ -444,7 +520,7 @@ var ViewModel = function() {
 			}
 		}
 
-	}
+	};
 
 	this.filterEntities = function() {
 		// get the user search terms from the search bar of the UI
@@ -475,4 +551,10 @@ var ViewModel = function() {
 
 };
 
-ko.applyBindings(new ViewModel());
+function googleError(){
+	alert("Google Maps cannot be loaded!");
+}
+
+function initMap() {
+  ko.applyBindings(new ViewModel());
+}
