@@ -211,6 +211,9 @@ var Entity = function(data) {
 	this.city = ko.observable(data.city);
 	this.description = ko.observable(data.description);
 	this.mapMarker = ko.observable(data.mapMarker);
+	this.thirdPartyInfo = ko.observable(data.tpInfo);
+	this.fav = ko.observable(data.fav);
+	this.col = ko.observable(data.col);
 };
 
 
@@ -220,6 +223,11 @@ var ViewModel = function() {
 	self.searchTerms = ko.observable('');
 	self.entityList= ko.observableArray([]);
 	self.mapMarkers= [];
+
+		// constructing the info window object
+	self.infowindow = new google.maps.InfoWindow({
+	    content: ''
+	});
 
 	self.searchTerms.subscribe(function(){self.filterEntities();});
 
@@ -232,14 +240,23 @@ var ViewModel = function() {
 
 	// creating the map in the UI
 	self.map = new google.maps.Map(document.getElementById('map'), mapOptions);
+	self.mapBounds = new google.maps.LatLngBounds();
 
-	// mapping each entity from the model with a marker on the map in the UI
-	//initialEntities.forEach(function(entity){
-	//	var koEntity = new Entity(entity);
-	//	self.entityList.push(koEntity);
-	//});
+	// computed observable that is triggered when there is a change on the list of entities
+	ko.computed(function () {
+		// store a clean copy to local storage, which also creates a dependency on
+		// the observableArray and all observables in each item
+		localStorage.setItem('map-knockoutjs', ko.toJSON(self.entityList));
+	}.bind(this)).extend({
+		rateLimit: { timeout: 500, method: 'notifyWhenChangesStop' }
+	}); // save at most twice per second
 
-	//self.currentEntity = ko.observable(self.entityList()[0]);
+	var entities = ko.utils.parseJson(localStorage.getItem('map-knockoutjs'));
+
+	// map array of passed in todos to an observableArray of Todo objects
+	this.entityList = ko.observableArray(entities.map(function (entity) {
+		return new Entity(entity);
+	}));
 
 	self.clearMarkers = function(){
 		// source: https://developers.google.com/maps/documentation/javascript/examples/marker-remove
@@ -254,8 +271,108 @@ var ViewModel = function() {
 		new google.maps.event.trigger(self.currentEntity().mapMarker(), 'click');
 	};
 
+	self.setEntityFav = function(entity){
+
+		self.currentEntity(entity);
+		//console.log(entity());
+
+		if (self.currentEntity().fav() == true){
+			entity.fav = false;
+			entity.col = 'gray';
+		}else{
+			entity.fav = true;
+			entity.col = 'red';
+		}
+		self.currentEntity(entity);
+
+		console.log(self.entityList());
+	};
+
+	self.FScallAPI = function(entity, info, wikiArticlesInfo, marker){
+
+		// the url string to be used for the Foursquare API
+	   	var fsqrUrl = 'https://api.foursquare.com/v2/venues/search' +
+					  '?client_id=' +
+					  '&client_secret=' +
+					  '&v=20130815' +
+					  '&ll=' + entity.lat + ',' + entity.lan +
+					  '&query=' + entity.title.split(' ').join('+');
+
+		// getting data from Foursquare API
+		$.getJSON(fsqrUrl, function (data) {
+	        venues = data.response.venues;
+
+	        // building the info window string by adding
+	        // relevant venues from  Foursquare
+	        for (var i = 0; i < venues.length; i++) {
+	            var venue = venues[i];
+
+	            if ( venue.name ){
+	                info = info + venue.name;
+	            }
+	            // adding the address of the venue to the info window string
+	            if ( venue.location ){
+	            	if (venue.location.formattedAddress){
+	            		info = info + ' - ' + venue.location.formattedAddress[0];
+	            	} else {
+	            		if (venue.locatio.address){
+	            			info = info + ' - ' + venue.location.address;
+	            		}
+	            	}
+	            }
+	            info = info + '<br>';
+	        }
+
+	        info = info + wikiArticlesInfo;
+
+	        var entityName = entity.title;
+
+	        if (entity.title.length === 0){
+	        	entityName = entity.address;
+	        }
+
+		  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+			'<h2>' + entityName+ '</h2>' +
+			entity.description + '<br>' +
+			'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+			'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+			'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+			info + 
+			'</div>';
+
+		  	self.infowindow.setContent(contentString);
+			self.infowindow.open(self.map, marker);
+			return contentString;
+	    }).error(function() {
+	    	var entityName = entity.title;
+
+	        if (entity.title.length === 0){
+	        	entityName = entity.address;
+	        }
+
+	        info = info + 'Foursquare data could not be fetched!<br>' + wikiArticlesInfo;
+	        var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
+			'<h2>' + entityName+ '</h2>' +
+			entity.description + '<br>' +
+			'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
+			'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
+			'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
+			info + 
+			'</div>';
+
+			self.infowindow.setContent(contentString);
+			self.infowindow.open(self.map, marker);
+			return contentString;
+	  	});
+	};
+
 	self.initializeMapEntities = function(entities) {
 		//self.map = new google.maps.Map(document.getElementById('map'), mapOptions);
+
+		// Google Maps API auto scale and zoom to fit markers and still look nice
+		// example code: http://stackoverflow.com/questions/1556921/google-map-api-v3-set-bounds-and-center
+		self.mapBounds = new google.maps.LatLngBounds();
+
 		entities.forEach(function(entity){
 
 			// constructing the Google Maps marker
@@ -264,10 +381,21 @@ var ViewModel = function() {
 			    title: entity.title
 			});
 
+			var entityLatLng = new google.maps.LatLng(entity.lat, entity.lan);
+			var tpInfo = '';
+
+			entity.fav = false;
+
+			self.mapBounds.extend(entityLatLng);
+
 			// adding a listener so that when the marker is clicked
 			// a bouncing marker animation is triggered
 			marker.addListener('click', function() {
-			    marker.setAnimation(google.maps.Animation.DROP);
+			    marker.setAnimation(google.maps.Animation.BOUNCE);
+
+			    // make the marker bounce only twice
+			    // example code taken from: http://stackoverflow.com/questions/7339200/bounce-a-pin-in-google-maps-once
+			    setTimeout(function(){ marker.setAnimation(null); }, 1400);
 			  	// start building the strint to be displayed in the Google maps marker
 				// info window for this entity.
 				var info = '<h4>Relevant places:</h4>';
@@ -280,16 +408,10 @@ var ViewModel = function() {
 
 		        // the function to be executed if Wiki API does not responds
 		        var wikiRequestTimeout = setTimeout(function(){
-		        console.log('failed to get wikipedia resources');
-			    }, 8000);
+		        	console.log('failed to get wikipedia resources');
 
-			    // the url string to be used for the Foursquare API
-			   	var fsqrUrl = 'https://api.foursquare.com/v2/venues/search' +
-							  '?client_id=' +
-							  '&client_secret=' +
-							  '&v=20130815' +
-							  '&ll=' + entity.lat + ',' + entity.lan +
-							  '&query=' + entity.title.split(' ').join('+');
+		        	tpInfo = self.FScallAPI(entity, info, wikiArticlesInfo + 'Wiki articles could not be fetched!<br>', marker);
+			    }, 8000);
 
 		        // getting data from Wiki API
 			    $.ajax({url: wikiUrl,
@@ -309,131 +431,11 @@ var ViewModel = function() {
 		                	wikiArticlesInfo = wikiArticlesInfo + li_elem;
 		            	}
 
-		            	// getting data from Foursquare API
-						$.getJSON(fsqrUrl, function (data) {
-					        venues = data.response.venues;
-
-					        // building the info window string by adding
-					        // relevant venues from  Foursquare
-					        for (var i = 0; i < venues.length; i++) {
-					            var venue = venues[i];
-
-					            if ( venue.name ){
-					                info = info + venue.name;
-
-					            }
-					            // adding the address of the venue to the info window string
-					            if ( venue.location ){
-					            	if (venue.location.formattedAddress){
-					            		info = info + ' - ' + venue.location.formattedAddress[0];
-					            	} else {
-					            		if (venue.locatio.address){
-					            			info = info + ' - ' + venue.location.address;
-					            		}
-					            	}
-					            }
-					            info = info + '<br>';
-					        }
-
-					        info = info + wikiArticlesInfo;
-
-					        var entityName = entity.title;
-
-					        if (entity.title.length === 0){
-					        	entityName = entity.address;
-					        }
-
-						  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
-							'<h2>' + entity.title + '</h2>' +
-							entity.description + '<br>' +
-							'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
-							'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
-							'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
-							info + 
-							'</div>';
-
-						  	// constructing the info window object
-							var infowindow = new google.maps.InfoWindow({
-							    content: contentString
-							});
-
-							infowindow.open(self.map, marker);
-					    }).error(function() {
-					      var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
-							'<h2>' + entity.title + '</h2>' +
-							entity.description + '<br>' +
-							'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
-							'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
-							'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
-							'Wiki data could not be fetched!' + 
-							'</div>';
-
-					  	});
-
+		            	// Getting data from FourSquare API
+		            	tpInfo = self.FScallAPI(entity, info, wikiArticlesInfo, marker);
 		              	clearTimeout(wikiRequestTimeout);
 		            }
-		        }).error(function() {
-					console.log('Wiki Articles could not be loaded'); 
-
-					// getting data from Foursquare API
-					$.getJSON(fsqrUrl, function (data) {
-				        venues = data.response.venues;
-
-				        // building the info window string by adding
-				        // relevant venues from  Foursquare
-				        for (var i = 0; i < venues.length; i++) {
-				            var venue = venues[i];
-
-				            if ( venue.name ){
-				                info = info + venue.name;
-
-				            }
-				            // adding the address of the venue to the info window string
-				            if ( venue.location ){
-				            	if (venue.location.formattedAddress){
-				            		info = info + ' - ' + venue.location.formattedAddress[0];
-				            	} else {
-				            		if (venue.locatio.address){
-				            			info = info + ' - ' + venue.location.address;
-				            		}
-				            	}
-				            }
-				            info = info + '<br>';
-				        }
-
-				        info = info + wikiArticlesInfo;
-
-				        var entityName = entity.title;
-
-				        if (entity.title.length === 0){
-				        	entityName = entity.address;
-				        }
-
-					  	var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
-						'<h2>' + entityName+ '</h2>' +
-						entity.description + '<br>' +
-						'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
-						'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
-						'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
-						info + 
-						'</div>';
-
-					  	// constructing the info window object
-						var infowindow = new google.maps.InfoWindow({
-						    content: contentString
-						});
-
-						infowindow.open(self.map, marker);
-				    }).error(function() {
-				      var contentString = "<div id='content' class = 'GMPSInfoWindow' style='height: 200px;'>" +
-						'<h2>' + entityName+ '</h2>' +
-						entity.description + '<br>' +
-						'<b>' + 'address: ' + '</b>' + entity.address + '<br>' + 
-						'<b>' + 'lat: ' + '</b>' + entity.lat + '<br>' +
-						'<b>' + 'lan: ' + '</b>' + entity.lan + '<br>' +
-						'Foursquare data could not be fetched!' + 
-						'</div>';
-				  	});
+		        }).fail(function() {
 
 				});
 
@@ -442,6 +444,7 @@ var ViewModel = function() {
 			//marker.addListener('mouseover', function() {
 			//});
 			entity.mapMarker = marker;
+			entity.tpInfo = tpInfo;
 			var koEntity = new Entity(entity);
 			self.entityList.push(koEntity);
 
@@ -451,6 +454,8 @@ var ViewModel = function() {
 			marker.setMap(self.map);
 			self.mapMarkers.push(marker);
 		});
+
+		self.map.fitBounds(self.mapBounds);
 	};
 
 	this.listEntities = function(entities) {
